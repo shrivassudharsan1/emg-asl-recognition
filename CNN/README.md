@@ -80,10 +80,11 @@ Upon completion, `training.py` saves two models in the parent directory:
 
 ## Current Accuracy
 Training: 100%
-Validation: 57%
+Validation: 64%
 
 ## Areas of Improvements
 Requires more training data to reduce the issue of model overfitting to existing datasets. 
+
 
 
 
