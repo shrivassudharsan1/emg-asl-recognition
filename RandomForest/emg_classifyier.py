@@ -182,6 +182,10 @@ def extract_features(
                 feats[f"CH{c+1}_RMS"] = np.sqrt(np.mean(x**2))
                 feats[f"CH{c+1}_VAR"] = np.var(x)
                 feats[f"CH{c+1}_MAV"] = np.mean(np.abs(x))
+                feats[f"CH{c+1}_WL"] = np.sum(np.abs(np.diff(x)))
+                feats[f"CH{c+1}_IEMG"] = np.sum(np.abs(x))
+                feats[f"CH{c+1}_ZC"] = np.sum((x[:-1] * x[1:]) < 0)
+                feats[f"CH{c+1}_SSC"] = np.sum(((x[1:-1] - x[:-2]) * (x[1:-1] - x[2:])) > 0)
             all_rows.append(feats)
 
     out = pd.DataFrame(all_rows)
@@ -214,7 +218,7 @@ def normalize_and_encode(features_df: pd.DataFrame) -> pd.DataFrame:
 def train_and_evaluate(
     features_df: pd.DataFrame,
     label_col: str = "Target",
-    test_size: float = 0.8,
+    test_size: float = 0.2,
     random_state: int = 42,
     min_samples_per_class: int = 10,
 ) -> RandomForestClassifier:
