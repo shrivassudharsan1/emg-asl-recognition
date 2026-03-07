@@ -63,6 +63,89 @@ class UMAPRunner:
         cmd = ['python', 'umap_test.py', '--config', self.config_file, '--config-key', config_key]
         subprocess.run(cmd, check=True)
     
+    def _find_csv_file(self, file_path):
+        """
+        Find a CSV file by searching in CSV-Files and its subdirectories.
+        Returns the resolved path if found, otherwise returns the original path.
+        """
+        # Try exact path first
+        candidate = Path(file_path)
+        if candidate.exists():
+            return str(candidate)
+        
+        # Try under CSV-Files directory
+        csv_candidate = Path('CSV-Files') / file_path
+        if csv_candidate.exists():
+            return str(csv_candidate)
+        
+        # If just a filename (no directory separators), search subdirectories
+        file_name = Path(file_path).name
+        if file_name == file_path:  # It's just a filename, not a path
+            csv_dir = Path('CSV-Files')
+            if csv_dir.exists():
+                # Search in subdirectories
+                for subdir in csv_dir.iterdir():
+                    if subdir.is_dir():
+                        candidate_file = subdir / file_name
+                        if candidate_file.exists():
+                            return str(candidate_file)
+        
+        # Return original path if not found
+        return file_path
+
+    def _get_folder_files(self, folder_name):
+        """
+        Get all CSV files from a specific gesture folder in CSV-Files.
+        Returns a sorted list of file paths.
+        """
+        folder_path = Path('CSV-Files') / folder_name
+        if not folder_path.exists() or not folder_path.is_dir():
+            print(f"Error: Folder '{folder_name}' not found in CSV-Files/")
+            return []
+        
+        csv_files = sorted(folder_path.glob('*.csv'))
+        return [str(f) for f in csv_files]
+
+    def test_folder_individual(self, folder_name):
+        """Test all files in a folder individually (each file as separate label)"""
+        files = self._get_folder_files(folder_name)
+        if not files:
+            sys.exit(1)
+        
+        # Use just the filename as the label
+        labels = [Path(f).stem for f in files]
+        
+        print(f"\n🚀 Testing all files in folder: {folder_name}")
+        print(f"   Files found: {len(files)}")
+        for f, label in zip(files, labels):
+            print(f"      • {label}: {f}")
+        
+        cmd = ['python', 'umap_test.py', '--files'] + files + ['--labels'] + labels
+        subprocess.run(cmd, check=True)
+
+    def compare_gestures(self, gesture1, gesture2):
+        """Compare two gestures by combining all files in each folder"""
+        files1 = self._get_folder_files(gesture1)
+        files2 = self._get_folder_files(gesture2)
+        
+        if not files1 or not files2:
+            sys.exit(1)
+        
+        all_files = files1 + files2
+        all_labels = [gesture1.replace('-', ' ').title()] * len(files1) + \
+                     [gesture2.replace('-', ' ').title()] * len(files2)
+        
+        print(f"\n🚀 Comparing gestures: {gesture1} vs {gesture2}")
+        print(f"   {gesture1}: {len(files1)} files")
+        for f in files1:
+            print(f"      • {f}")
+        print(f"   {gesture2}: {len(files2)} files")
+        for f in files2:
+            print(f"      • {f}")
+        
+        cmd = ['python', 'umap_test.py', '--files'] + all_files + ['--labels'] + all_labels
+        subprocess.run(cmd, check=True)
+
     def run_custom(self, files, labels):
         """Run with custom files and labels"""
         if len(files) != len(labels):
@@ -71,17 +154,7 @@ class UMAPRunner:
 
         resolved_files = []
         for file_path in files:
-            candidate = Path(file_path)
-            if candidate.exists():
-                resolved_files.append(str(candidate))
-                continue
-
-            csv_candidate = Path('CSV-Files') / file_path
-            if csv_candidate.exists():
-                resolved_files.append(str(csv_candidate))
-                continue
-
-            resolved_files.append(file_path)
+            resolved_files.append(self._find_csv_file(file_path))
         
         print("\n🚀 Running with custom configuration")
         print(f"   Files: {resolved_files}")
@@ -108,6 +181,23 @@ class UMAPRunner:
         }
         for cmd, desc in presets.items():
             print(f"  python run_umap.py {cmd:15} → {desc}")
+        print("\n" + "="*60)
+        print("Gesture Folder Analysis")
+        print("="*60)
+        gestures = ['closed-hand', 'opened-hand', 'hang-loose', 'peace', 'spider-man']
+        for gesture in gestures:
+            print(f"  Test individual files: python run_umap.py test_folder {gesture}")
+        print("\n  Compare two gestures: python run_umap.py compare_gesture <gesture1> <gesture2>")
+        for i, gesture1 in enumerate(gestures):
+            for gesture2 in gestures[i+1:]:
+                print(f"    Example: python run_umap.py compare_gesture {gesture1} {gesture2}")
+                if i < 2:  # Just show a few examples
+                    pass
+                else:
+                    print(f"    ... and more combinations")
+                    break
+            if i >= 1:
+                break
         print("="*60 + "\n")
 
 def main():
@@ -118,6 +208,8 @@ def main():
 Examples:
   python run_umap.py default
   python run_umap.py list
+  python run_umap.py test_folder closed-hand
+  python run_umap.py compare_gesture spider-man peace
   python run_umap.py custom CSV-Files/Test-Ricardo.csv Ricardo EMG_ASL/CSV/Test-Ricardo_Open-Hand.csv "Open Hand"
         """
     )
@@ -126,7 +218,13 @@ Examples:
         'action',
         nargs='?',
         default='default',
-        help='Action to perform: default, list, presets, custom, or preset name (ricardo, all, emc, random)'
+        help='Action: default, list, presets, custom, test_folder, compare_gesture, or preset name'
+    )
+    
+    parser.add_argument(
+        'extra_args',
+        nargs='*',
+        help='Additional arguments for test_folder (folder_name) or compare_gesture (gesture1 gesture2)'
     )
     
     parser.add_argument(
@@ -156,6 +254,20 @@ Examples:
             print("Error: --files and --labels required for custom configuration")
             sys.exit(1)
         runner.run_custom(args.files, args.labels)
+    elif args.action == 'test_folder':
+        if not args.extra_args or len(args.extra_args) < 1:
+            print("Error: test_folder requires a folder name")
+            print("Available folders: closed-hand, opened-hand, hang-loose, peace, spider-man")
+            print("Example: python run_umap.py test_folder closed-hand")
+            sys.exit(1)
+        runner.test_folder_individual(args.extra_args[0])
+    elif args.action == 'compare_gesture':
+        if not args.extra_args or len(args.extra_args) < 2:
+            print("Error: compare_gesture requires two gesture names")
+            print("Available gestures: closed-hand, opened-hand, hang-loose, peace, spider-man")
+            print("Example: python run_umap.py compare_gesture spider-man peace")
+            sys.exit(1)
+        runner.compare_gestures(args.extra_args[0], args.extra_args[1])
     elif args.action in runner.configs:
         runner.run_config(args.action)
     elif args.action in ['ricardo', 'all', 'emc', 'random', 'fingers', 'hand', 'all_gestures', 'comparison']:
